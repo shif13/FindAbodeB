@@ -1,14 +1,15 @@
-// backend/controllers/propertyController.js
+// backend/controllers/propertyController.js - COMPLETE VERSION
 import Property from '../models/property.js';
+import User from '../models/user.js';
 import { Op } from 'sequelize';
 
-// Get all properties with filters
+// Get all properties with filters (PUBLIC)
 export const getAllProperties = async (req, res) => {
   try {
     const { 
       city, 
-      propertyType, 
-      type,
+      propertyType,
+      listingType,
       minPrice, 
       maxPrice, 
       bedrooms, 
@@ -17,29 +18,29 @@ export const getAllProperties = async (req, res) => {
       limit = 12 
     } = req.query;
 
-    const filters = { status: 'available' };
+    const filters = { 
+      isActive: true,
+      approvalStatus: 'approved' // Only show approved properties
+    };
 
-    if (city) {
-      filters.city = { [Op.like]: `%${city}%` };
-    }
+    if (city) filters.city = { [Op.like]: `%${city}%` };
+    if (propertyType) filters.propertyType = propertyType;
+    if (listingType) filters.listingType = listingType;
 
-    if (propertyType) {
-      filters.propertyType = propertyType;
-    }
-
-    if (type) {
-      filters.type = type;
-    }
-
+    // Price filter - check both sale price and rent
     if (minPrice || maxPrice) {
-      filters.price = {};
-      if (minPrice) filters.price[Op.gte] = parseFloat(minPrice);
-      if (maxPrice) filters.price[Op.lte] = parseFloat(maxPrice);
+      if (listingType === 'rent') {
+        filters.rentPerMonth = {};
+        if (minPrice) filters.rentPerMonth[Op.gte] = parseFloat(minPrice);
+        if (maxPrice) filters.rentPerMonth[Op.lte] = parseFloat(maxPrice);
+      } else {
+        filters.price = {};
+        if (minPrice) filters.price[Op.gte] = parseFloat(minPrice);
+        if (maxPrice) filters.price[Op.lte] = parseFloat(maxPrice);
+      }
     }
 
-    if (bedrooms) {
-      filters.bedrooms = parseInt(bedrooms);
-    }
+    if (bedrooms) filters.bedrooms = parseInt(bedrooms);
 
     if (search) {
       filters[Op.or] = [
@@ -78,11 +79,10 @@ export const getAllProperties = async (req, res) => {
   }
 };
 
-// Get single property by ID
+// Get single property by ID (PUBLIC)
 export const getPropertyById = async (req, res) => {
   try {
     const { id } = req.params;
-
     const property = await Property.findByPk(id);
 
     if (!property) {
@@ -91,6 +91,9 @@ export const getPropertyById = async (req, res) => {
         message: 'Property not found'
       });
     }
+
+    // Increment view count
+    await property.increment('views');
 
     res.status(200).json({
       success: true,
@@ -106,7 +109,7 @@ export const getPropertyById = async (req, res) => {
   }
 };
 
-// Get user's properties
+// Get user's properties (PROTECTED)
 export const getUserProperties = async (req, res) => {
   try {
     const userId = req.user.uid;
@@ -130,21 +133,72 @@ export const getUserProperties = async (req, res) => {
   }
 };
 
-// Create new property
+// Create new property (PROTECTED - Owner/Agent/Builder only)
 export const createProperty = async (req, res) => {
   try {
     const userId = req.user.uid;
+
+    // Get user from database to check userType
+    const user = await User.findOne({ where: { firebaseUid: userId } });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user can post properties
+    const allowedTypes = ['owner', 'agent', 'builder'];
+    if (!allowedTypes.includes(user.userType)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only owners, agents, and builders can post properties'
+      });
+    }
+
+    // Check if user is approved (for agents/builders)
+    if ((user.userType === 'agent' || user.userType === 'builder') && user.approvalStatus !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is pending approval. You cannot post properties yet.'
+      });
+    }
+
+    // Determine approval status for the property
+    let propertyApprovalStatus = 'approved'; // Default for owners
+
+    // Agent/Builder approval logic
+    if (user.userType === 'agent' || user.userType === 'builder') {
+      // Count how many approved properties this user has
+      const approvedCount = await Property.count({
+        where: { 
+          userId, 
+          approvalStatus: 'approved' 
+        }
+      });
+
+      // First 3 properties need approval
+      if (approvedCount < 3) {
+        propertyApprovalStatus = 'pending';
+      }
+    }
+
     const propertyData = {
       ...req.body,
-      userId
+      userId,
+      approvalStatus: propertyApprovalStatus
     };
 
     const property = await Property.create(propertyData);
 
     res.status(201).json({
       success: true,
-      message: 'Property created successfully',
-      data: property
+      message: propertyApprovalStatus === 'pending' 
+        ? 'Property submitted for approval' 
+        : 'Property created successfully',
+      data: property,
+      needsApproval: propertyApprovalStatus === 'pending'
     });
   } catch (error) {
     console.error('Create property error:', error);
@@ -156,7 +210,7 @@ export const createProperty = async (req, res) => {
   }
 };
 
-// Update property
+// Update property (PROTECTED)
 export const updateProperty = async (req, res) => {
   try {
     const { id } = req.params;
@@ -196,7 +250,7 @@ export const updateProperty = async (req, res) => {
   }
 };
 
-// Delete property
+// Delete property (PROTECTED)
 export const deleteProperty = async (req, res) => {
   try {
     const { id } = req.params;
@@ -235,13 +289,14 @@ export const deleteProperty = async (req, res) => {
   }
 };
 
-// Get featured properties
+// Get featured properties (PUBLIC)
 export const getFeaturedProperties = async (req, res) => {
   try {
     const properties = await Property.findAll({
       where: { 
-        featured: true,
-        status: 'available'
+        isFeatured: true,
+        isActive: true,
+        approvalStatus: 'approved'
       },
       limit: 6,
       order: [['createdAt', 'DESC']]
@@ -256,6 +311,108 @@ export const getFeaturedProperties = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch featured properties',
+      error: error.message
+    });
+  }
+};
+
+// ============================================
+// ADMIN ROUTES
+// ============================================
+
+// Get all properties for admin (including pending)
+export const getAllPropertiesAdmin = async (req, res) => {
+  try {
+    const { approvalStatus, page = 1, limit = 20 } = req.query;
+    
+    const filters = {};
+    if (approvalStatus) filters.approvalStatus = approvalStatus;
+
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await Property.findAndCountAll({
+      where: filters,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.status(200).json({
+      success: true,
+      data: rows,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        pages: Math.ceil(count / limit)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch properties',
+      error: error.message
+    });
+  }
+};
+
+// Approve property (ADMIN)
+export const approveProperty = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const property = await Property.findByPk(id);
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: 'Property not found'
+      });
+    }
+
+    property.approvalStatus = 'approved';
+    property.isActive = true;
+    await property.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Property approved successfully',
+      data: property
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to approve property',
+      error: error.message
+    });
+  }
+};
+
+// Reject property (ADMIN)
+export const rejectProperty = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const property = await Property.findByPk(id);
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: 'Property not found'
+      });
+    }
+
+    property.approvalStatus = 'rejected';
+    property.isActive = false;
+    await property.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Property rejected',
+      data: property
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reject property',
       error: error.message
     });
   }

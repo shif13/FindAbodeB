@@ -11,21 +11,29 @@ import {
   toggleUserStatus
 } from '../controllers/userController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
+import { isAdmin } from '../middleware/checkUserType.js';
 
 const router = express.Router();
 
-// Public route - Create user after Firebase signup
+// ============================================
+// PUBLIC ROUTE
+// ============================================
+// Create user after Firebase signup (no auth required)
 router.post('/create', createUser);
 
-// Protected routes - Require authentication
+// ============================================
+// PROTECTED ROUTES (Authentication required)
+// ============================================
 router.get('/profile/:uid', authenticate, getUserByUid);
 router.put('/profile/:uid', authenticate, updateProfile);
 
-// Admin routes - Require authentication (later add admin check)
-router.get('/all', authenticate, getAllUsers);
-router.patch('/:id/approve', authenticate, approveUser);
-router.patch('/:id/reject', authenticate, rejectUser);
-router.delete('/:id', authenticate, deleteUser);
-router.patch('/:id/toggle-status', authenticate, toggleUserStatus);
+// ============================================
+// ADMIN ROUTES (Admin authentication required)
+// ============================================
+router.get('/all', authenticate, isAdmin, getAllUsers);
+router.patch('/:id/approve', authenticate, isAdmin, approveUser);
+router.patch('/:id/reject', authenticate, isAdmin, rejectUser);
+router.delete('/:id', authenticate, isAdmin, deleteUser);
+router.patch('/:id/toggle-status', authenticate, isAdmin, toggleUserStatus);
 
 export default router;

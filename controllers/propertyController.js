@@ -133,12 +133,14 @@ export const getUserProperties = async (req, res) => {
   }
 };
 
-// Create new property (PROTECTED - Owner/Agent/Builder only)
+// ============================================
+// CREATE PROPERTY - UPDATED FOR 2 USER TYPES
+// ============================================
 export const createProperty = async (req, res) => {
   try {
     const userId = req.user.uid;
 
-    // Get user from database to check userType
+    // Get user from database
     const user = await User.findOne({ where: { firebaseUid: userId } });
 
     if (!user) {
@@ -148,29 +150,47 @@ export const createProperty = async (req, res) => {
       });
     }
 
-    // Check if user can post properties
-    const allowedTypes = ['owner', 'agent', 'builder'];
-    if (!allowedTypes.includes(user.userType)) {
+    // ============================================
+    // CHECK IF USER IS A PROVIDER
+    // ============================================
+    if (user.userType !== 'provider') {
       return res.status(403).json({
         success: false,
-        message: 'Only owners, agents, and builders can post properties'
+        message: 'Only providers (owners, agents, builders) can post properties',
+        userType: user.userType,
+        hint: 'Please create a provider account to list properties'
       });
     }
 
-    // Check if user is approved (for agents/builders)
-    if ((user.userType === 'agent' || user.userType === 'builder') && user.approvalStatus !== 'approved') {
-      return res.status(403).json({
-        success: false,
-        message: 'Your account is pending approval. You cannot post properties yet.'
-      });
+    // ============================================
+    // CHECK PROVIDER APPROVAL STATUS
+    // ============================================
+    // Owners are auto-approved
+    if (user.providerType === 'owner') {
+      // Owner can post immediately
+    }
+    // Agents and Builders need approval
+    else if (user.providerType === 'agent' || user.providerType === 'builder') {
+      if (user.approvalStatus !== 'approved') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account is pending approval. You cannot post properties yet.',
+          approvalStatus: user.approvalStatus,
+          rejectionReason: user.rejectionReason
+        });
+      }
     }
 
-    // Determine approval status for the property
+    // ============================================
+    // DETERMINE PROPERTY APPROVAL STATUS
+    // ============================================
     let propertyApprovalStatus = 'approved'; // Default for owners
 
-    // Agent/Builder approval logic
-    if (user.userType === 'agent' || user.userType === 'builder') {
-      // Count how many approved properties this user has
+    // Agents/Builders approval logic (optional - can be enabled)
+    // Uncomment if you want to approve agent/builder properties
+    /*
+    if (user.providerType === 'agent' || user.providerType === 'builder') {
+      // Count approved properties
       const approvedCount = await Property.count({
         where: { 
           userId, 
@@ -183,11 +203,16 @@ export const createProperty = async (req, res) => {
         propertyApprovalStatus = 'pending';
       }
     }
+    */
 
+    // ============================================
+    // CREATE PROPERTY
+    // ============================================
     const propertyData = {
       ...req.body,
       userId,
-      approvalStatus: propertyApprovalStatus
+      approvalStatus: propertyApprovalStatus,
+      postedByType: user.providerType // 'owner', 'agent', or 'builder'
     };
 
     const property = await Property.create(propertyData);
@@ -209,6 +234,7 @@ export const createProperty = async (req, res) => {
     });
   }
 };
+
 
 // Update property (PROTECTED)
 export const updateProperty = async (req, res) => {

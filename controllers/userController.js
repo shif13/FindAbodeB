@@ -1,7 +1,9 @@
-// backend/controllers/userController.js
+// backend/controllers/userController.js - UPDATED FOR 2 USER TYPES
 import User from '../models/user.js';
 
-// Create user after Firebase signup
+// ============================================
+// CREATE USER AFTER FIREBASE SIGNUP
+// ============================================
 export const createUser = async (req, res) => {
   try {
     const { 
@@ -9,25 +11,66 @@ export const createUser = async (req, res) => {
       email, 
       name, 
       phone,
-      userType,
+      userType,        // 'seeker' or 'provider'
+      providerType,    // 'owner', 'agent', or 'builder' (only if provider)
       city,
       state,
       address,
-      // Agent fields
+      // Agent-specific fields
       agencyName,
       licenseNumber,
       reraNumber,
-      // Builder fields
+      // Builder-specific fields
       companyName,
       gstNumber
     } = req.body;
 
-    // Validation
-    if (!firebaseUid || !email || !name) {
+    // ============================================
+    // VALIDATION
+    // ============================================
+    if (!firebaseUid || !email || !name || !userType) {
       return res.status(400).json({
         success: false,
-        message: 'Firebase UID, email, and name are required'
+        message: 'Firebase UID, email, name, and userType are required'
       });
+    }
+
+    // Validate userType
+    if (!['seeker', 'provider', 'admin'].includes(userType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid userType. Must be seeker, provider, or admin'
+      });
+    }
+
+    // If provider, validate providerType
+    if (userType === 'provider') {
+      if (!providerType || !['owner', 'agent', 'builder'].includes(providerType)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Provider must specify providerType: owner, agent, or builder'
+        });
+      }
+
+      // Validate required fields for agents
+      if (providerType === 'agent') {
+        if (!agencyName || !licenseNumber) {
+          return res.status(400).json({
+            success: false,
+            message: 'Agents must provide agency name and license number'
+          });
+        }
+      }
+
+      // Validate required fields for builders
+      if (providerType === 'builder') {
+        if (!companyName || !reraNumber) {
+          return res.status(400).json({
+            success: false,
+            message: 'Builders must provide company name and RERA number'
+          });
+        }
+      }
     }
 
     // Check if user already exists
@@ -39,55 +82,75 @@ export const createUser = async (req, res) => {
       });
     }
 
-    // Set approval status based on userType
-    let approvalStatus = 'approved'; // Default for buyer/tenant/owner
-    if (userType === 'agent' || userType === 'builder') {
-      approvalStatus = 'pending'; // Needs admin approval
+    // ============================================
+    // DETERMINE APPROVAL STATUS
+    // ============================================
+    let approvalStatus = 'approved'; // Default for seekers and owners
+    
+    if (userType === 'provider' && (providerType === 'agent' || providerType === 'builder')) {
+      approvalStatus = 'pending'; // Agents and builders need approval
     }
 
-    // Build user data object
+    // ============================================
+    // BUILD USER DATA OBJECT
+    // ============================================
     const userData = {
       firebaseUid,
       email,
       name,
       phone,
-      userType: userType || 'buyer',
+      userType,
+      providerType: userType === 'provider' ? providerType : null,
       approvalStatus,
       city,
       state,
       address
     };
 
-    // Add agent-specific fields
-    if (userType === 'agent') {
-      userData.agencyName = agencyName;
-      userData.licenseNumber = licenseNumber;
-      userData.reraNumber = reraNumber;
+    // Add provider-specific fields
+    if (userType === 'provider') {
+      if (providerType === 'agent') {
+        userData.agencyName = agencyName;
+        userData.licenseNumber = licenseNumber;
+        userData.reraNumber = reraNumber || null;
+      } else if (providerType === 'builder') {
+        userData.companyName = companyName;
+        userData.reraNumber = reraNumber;
+        userData.gstNumber = gstNumber || null;
+      }
     }
 
-    // Add builder-specific fields
-    if (userType === 'builder') {
-      userData.companyName = companyName;
-      userData.reraNumber = reraNumber;
-      userData.gstNumber = gstNumber;
-    }
-
-    // Create user in database
+    // ============================================
+    // CREATE USER IN DATABASE
+    // ============================================
     const user = await User.create(userData);
+
+    // ============================================
+    // PREPARE RESPONSE MESSAGE
+    // ============================================
+    let message = 'Account created successfully!';
+    let needsApproval = false;
+
+    if (userType === 'provider' && providerType === 'agent') {
+      message = 'Agent account created! Pending admin approval.';
+      needsApproval = true;
+    } else if (userType === 'provider' && providerType === 'builder') {
+      message = 'Builder account created! Pending admin approval.';
+      needsApproval = true;
+    }
 
     res.status(201).json({
       success: true,
-      message: userType === 'agent' || userType === 'builder' 
-        ? 'Account created! Pending admin approval.' 
-        : 'Account created successfully!',
+      message,
       data: {
         id: user.id,
         email: user.email,
         name: user.name,
         userType: user.userType,
+        providerType: user.providerType,
         approvalStatus: user.approvalStatus
       },
-      needsApproval: approvalStatus === 'pending'
+      needsApproval
     });
 
   } catch (error) {
@@ -100,7 +163,9 @@ export const createUser = async (req, res) => {
   }
 };
 
-// Get user by Firebase UID
+// ============================================
+// GET USER BY FIREBASE UID
+// ============================================
 export const getUserByUid = async (req, res) => {
   try {
     const { uid } = req.params;
@@ -131,7 +196,9 @@ export const getUserByUid = async (req, res) => {
   }
 };
 
-// Update user profile
+// ============================================
+// UPDATE USER PROFILE
+// ============================================
 export const updateProfile = async (req, res) => {
   try {
     const { uid } = req.params;
@@ -150,6 +217,7 @@ export const updateProfile = async (req, res) => {
     delete updateData.firebaseUid;
     delete updateData.email;
     delete updateData.userType;
+    delete updateData.providerType;
     delete updateData.approvalStatus;
 
     await user.update(updateData);
@@ -169,13 +237,16 @@ export const updateProfile = async (req, res) => {
   }
 };
 
-// Admin: Get all users
+// ============================================
+// ADMIN: GET ALL USERS
+// ============================================
 export const getAllUsers = async (req, res) => {
   try {
-    const { userType, approvalStatus } = req.query;
+    const { userType, providerType, approvalStatus } = req.query;
     
     const whereClause = {};
     if (userType) whereClause.userType = userType;
+    if (providerType) whereClause.providerType = providerType;
     if (approvalStatus) whereClause.approvalStatus = approvalStatus;
 
     const users = await User.findAll({
@@ -199,7 +270,9 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// Admin: Approve user
+// ============================================
+// ADMIN: APPROVE USER (Agent/Builder)
+// ============================================
 export const approveUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -212,6 +285,15 @@ export const approveUser = async (req, res) => {
       });
     }
 
+    // Only approve providers (agents/builders)
+    if (user.userType !== 'provider' || 
+        (user.providerType !== 'agent' && user.providerType !== 'builder')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only agents and builders need approval'
+      });
+    }
+
     user.approvalStatus = 'approved';
     user.isActive = true;
     user.isVerified = true;
@@ -219,7 +301,7 @@ export const approveUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'User approved successfully',
+      message: `${user.providerType.charAt(0).toUpperCase() + user.providerType.slice(1)} approved successfully`,
       data: user
     });
   } catch (error) {
@@ -232,7 +314,9 @@ export const approveUser = async (req, res) => {
   }
 };
 
-// Admin: Reject user
+// ============================================
+// ADMIN: REJECT USER
+// ============================================
 export const rejectUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -266,7 +350,9 @@ export const rejectUser = async (req, res) => {
   }
 };
 
-// Admin: Delete user
+// ============================================
+// ADMIN: DELETE USER
+// ============================================
 export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -295,7 +381,9 @@ export const deleteUser = async (req, res) => {
   }
 };
 
-// Admin: Toggle user active status
+// ============================================
+// ADMIN: TOGGLE USER STATUS
+// ============================================
 export const toggleUserStatus = async (req, res) => {
   try {
     const { id } = req.params;

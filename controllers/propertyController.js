@@ -3,6 +3,28 @@ import Property from '../models/property.js';
 import User from '../models/user.js';
 import { Op } from 'sequelize';
 
+
+const cleanPropertyData = (data) => {
+  const cleaned = { ...data };
+  
+  // Fields that should be null if empty
+  const optionalFields = [
+    'latitude', 'longitude', 'videoUrl', 'ownerName', 
+    'ownerPhone', 'ownerEmail', 'leaseDuration', 
+    'pricePerSqft', 'depositAmount', 'maintenanceCharges',
+    'availableFrom', 'floor', 'totalFloors', 'facing', 'ageOfProperty'
+  ];
+  
+  optionalFields.forEach(field => {
+    if (cleaned[field] === '' || cleaned[field] === undefined) {
+      cleaned[field] = null;
+    }
+  });
+  
+  return cleaned;
+};
+
+
 // Get all properties with filters (PUBLIC)
 export const getAllProperties = async (req, res) => {
   try {
@@ -150,9 +172,7 @@ export const createProperty = async (req, res) => {
       });
     }
 
-    // ============================================
     // CHECK IF USER IS A PROVIDER
-    // ============================================
     if (user.userType !== 'provider') {
       return res.status(403).json({
         success: false,
@@ -162,14 +182,10 @@ export const createProperty = async (req, res) => {
       });
     }
 
-    // ============================================
     // CHECK PROVIDER APPROVAL STATUS
-    // ============================================
-    // Owners are auto-approved
     if (user.providerType === 'owner') {
       // Owner can post immediately
     }
-    // Agents and Builders need approval
     else if (user.providerType === 'agent' || user.providerType === 'builder') {
       if (user.approvalStatus !== 'approved') {
         return res.status(403).json({
@@ -181,35 +197,15 @@ export const createProperty = async (req, res) => {
       }
     }
 
-    // ============================================
     // DETERMINE PROPERTY APPROVAL STATUS
-    // ============================================
     let propertyApprovalStatus = 'approved'; // Default for owners
 
-    // Agents/Builders approval logic (optional - can be enabled)
-    // Uncomment if you want to approve agent/builder properties
-    /*
-    if (user.providerType === 'agent' || user.providerType === 'builder') {
-      // Count approved properties
-      const approvedCount = await Property.count({
-        where: { 
-          userId, 
-          approvalStatus: 'approved' 
-        }
-      });
+    // 🔥 CLEAN THE DATA BEFORE SAVING
+    const cleanedData = cleanPropertyData(req.body);
 
-      // First 3 properties need approval
-      if (approvedCount < 3) {
-        propertyApprovalStatus = 'pending';
-      }
-    }
-    */
-
-    // ============================================
     // CREATE PROPERTY
-    // ============================================
     const propertyData = {
-      ...req.body,
+      ...cleanedData,
       userId,
       approvalStatus: propertyApprovalStatus,
       postedByType: user.providerType // 'owner', 'agent', or 'builder'

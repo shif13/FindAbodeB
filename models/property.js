@@ -1,4 +1,4 @@
-// backend/models/property.js - COMPLETE VERSION
+// backend/models/property.js - FIXED postedByType ENUM
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/db.js';
 
@@ -151,10 +151,11 @@ const Property = sequelize.define('Property', {
     comment: 'Array of amenities like parking, gym, pool'
   },
   
-  // Ownership (if posted by Agent/Builder)
+  // 🔥 FIXED: Changed 'self' to 'owner' to match providerType
   postedByType: {
-    type: DataTypes.ENUM('self', 'agent', 'builder'),
-    defaultValue: 'self'
+    type: DataTypes.ENUM('owner', 'agent', 'builder'),
+    defaultValue: 'owner',
+    comment: 'Who posted this property - matches user.providerType'
   },
   ownerName: {
     type: DataTypes.STRING,

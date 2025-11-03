@@ -8,10 +8,10 @@ import {
   updateProperty,
   deleteProperty,
   getFeaturedProperties,
-  // Admin routes
   getAllPropertiesAdmin,
   approveProperty,
-  rejectProperty
+  rejectProperty,
+  toggleFeaturedProperty
 } from '../controllers/propertyController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
 import { isAdmin } from '../middleware/checkUserType.js';
@@ -40,4 +40,5 @@ router.get('/admin/all', authenticate, isAdmin, getAllPropertiesAdmin);
 router.patch('/admin/:id/approve', authenticate, isAdmin, approveProperty);
 router.patch('/admin/:id/reject', authenticate, isAdmin, rejectProperty);
 
+router.patch('/admin/:id/toggle-featured', authenticate, isAdmin, toggleFeaturedProperty);
 export default router;

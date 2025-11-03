@@ -1,5 +1,6 @@
 // backend/controllers/propertyController.js - COMPLETE VERSION
 import Property from '../models/property.js';
+import { sendPropertyVisitNotification } from '../utils/emailService.js'; 
 import User from '../models/user.js';
 import { Op } from 'sequelize';
 
@@ -116,6 +117,13 @@ export const getPropertyById = async (req, res) => {
 
     // Increment view count
     await property.increment('views');
+
+    if (property.views % 10 === 0) {
+  const owner = await User.findOne({ where: { firebaseUid: property.userId } });
+  if (owner) {
+    await sendPropertyVisitNotification(property, owner);
+  }
+}
 
     res.status(200).json({
       success: true,
@@ -435,6 +443,37 @@ export const rejectProperty = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to reject property',
+      error: error.message
+    });
+  }
+};
+
+
+// Add this function
+export const toggleFeaturedProperty = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const property = await Property.findByPk(id);
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: 'Property not found'
+      });
+    }
+
+    property.isFeatured = !property.isFeatured;
+    await property.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Property ${property.isFeatured ? 'marked as featured' : 'removed from featured'}`,
+      data: property
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to toggle featured status',
       error: error.message
     });
   }

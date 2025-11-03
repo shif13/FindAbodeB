@@ -1,5 +1,6 @@
 // backend/controllers/userController.js - UPDATED FOR 2 USER TYPES
 import User from '../models/user.js';
+import { sendWelcomeEmail, sendApprovalEmail, sendRejectionEmail } from '../utils/emailService.js';
 
 // ============================================
 // CREATE USER AFTER FIREBASE SIGNUP
@@ -138,6 +139,8 @@ export const createUser = async (req, res) => {
       message = 'Builder account created! Pending admin approval.';
       needsApproval = true;
     }
+
+    await sendWelcomeEmail(user);
 
     res.status(201).json({
       success: true,
@@ -298,6 +301,7 @@ export const approveUser = async (req, res) => {
     user.isActive = true;
     user.isVerified = true;
     await user.save();
+    await sendApprovalEmail(user);
 
     res.status(200).json({
       success: true,
@@ -334,7 +338,8 @@ export const rejectUser = async (req, res) => {
     user.isActive = false;
     user.rejectionReason = reason || 'Your account was rejected by admin';
     await user.save();
-
+    await sendRejectionEmail(user, reason);
+    
     res.status(200).json({
       success: true,
       message: 'User rejected',

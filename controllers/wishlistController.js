@@ -1,6 +1,8 @@
 // backend/controllers/wishlistController.js
 import Wishlist from '../models/wishlist.js';
 import Property from '../models/property.js';
+import { sendWishlistNotification } from '../utils/emailService.js';
+import User from '../models/user.js';
 
 // Get user's wishlist
 export const getUserWishlist = async (req, res) => {
@@ -37,7 +39,14 @@ export const addToWishlist = async (req, res) => {
     const { propertyId } = req.body;
 
     // Check if property exists
-    const property = await Property.findByPk(propertyId);
+
+const property = await Property.findByPk(propertyId);
+const owner = await User.findOne({ where: { firebaseUid: property.userId } });
+const seeker = await User.findOne({ where: { firebaseUid: userId } });
+
+await sendWishlistNotification(property, owner, seeker);
+
+
     if (!property) {
       return res.status(404).json({
         success: false,

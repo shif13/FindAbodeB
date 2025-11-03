@@ -37,8 +37,8 @@ const createAdmin = async () => {
     // For now, let's create with sample data that you can modify
     
     const adminData = {
-      firebaseUid: '6dJFG2adFseyJJApLRFpA9Gen5U2', 
-      email: 'shifani1131@gmail.com',       
+      firebaseUid: 'c8Gt5zV7LgXeLUhNREQX7jrkrJs2', 
+      email: 'fatimaa130201@gmail.com',       
       name: 'Admin User',
       phone: '+91 7867023051',
       userType: 'admin',
@@ -47,10 +47,6 @@ const createAdmin = async () => {
       isActive: true,
       isVerified: true
     };
-
-    // Validate UID is changed (REMOVE THIS CHECK since you have a real UID)
-    // The validation check has been removed so the script will proceed
-
     // Create admin user
     const admin = await User.create(adminData);
 

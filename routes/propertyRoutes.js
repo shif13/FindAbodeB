@@ -1,4 +1,4 @@
-// backend/routes/propertyRoutes.js
+// backend/routes/propertyRoutes.js - UPDATED
 import express from 'express';
 import {
   getAllProperties,
@@ -11,7 +11,8 @@ import {
   getAllPropertiesAdmin,
   approveProperty,
   rejectProperty,
-  toggleFeaturedProperty
+  toggleFeaturedProperty,
+  recalculateAllFeaturedStatuses
 } from '../controllers/propertyController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
 import { isAdmin } from '../middleware/checkUserType.js';
@@ -39,6 +40,9 @@ router.delete('/:id', authenticate, deleteProperty);
 router.get('/admin/all', authenticate, isAdmin, getAllPropertiesAdmin);
 router.patch('/admin/:id/approve', authenticate, isAdmin, approveProperty);
 router.patch('/admin/:id/reject', authenticate, isAdmin, rejectProperty);
-
 router.patch('/admin/:id/toggle-featured', authenticate, isAdmin, toggleFeaturedProperty);
+
+// 🔥 NEW: Manual trigger for recalculating featured statuses
+router.post('/admin/recalculate-featured', authenticate, isAdmin, recalculateAllFeaturedStatuses);
+
 export default router;

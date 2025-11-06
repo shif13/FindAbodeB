@@ -1,4 +1,4 @@
-// backend/models/property.js - FIXED postedByType ENUM
+// backend/models/property.js - UPDATED WITH FEATURED SYSTEM
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/db.js';
 
@@ -151,7 +151,7 @@ const Property = sequelize.define('Property', {
     comment: 'Array of amenities like parking, gym, pool'
   },
   
-  // 🔥 FIXED: Changed 'self' to 'owner' to match providerType
+  // Posted By
   postedByType: {
     type: DataTypes.ENUM('owner', 'agent', 'builder'),
     defaultValue: 'owner',
@@ -185,19 +185,51 @@ const Property = sequelize.define('Property', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  
+  // ============================================
+  // 🔥 NEW: HYBRID FEATURED SYSTEM
+  // ============================================
   isFeatured: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false
+    defaultValue: false,
+    comment: 'Manually featured by admin (highest priority)'
+  },
+  isAutoFeatured: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'Auto-qualified for featuring based on criteria'
+  },
+  featuredScore: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    comment: 'Score for sorting auto-featured properties'
+  },
+  featuredUntil: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Manual featured expiry date (optional)'
   },
   
-  // Stats
+  // Stats (for featured calculation)
   views: {
     type: DataTypes.INTEGER,
     defaultValue: 0
   },
+  wishlistCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    comment: 'Number of times added to wishlist'
+  },
   contacts: {
     type: DataTypes.INTEGER,
     defaultValue: 0
+  },
+  
+  // Premium (for future monetization)
+  isPremium: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'Premium listing (always auto-featured)'
   }
 }, {
   timestamps: true,
@@ -207,8 +239,89 @@ const Property = sequelize.define('Property', {
     { fields: ['listingType'] },
     { fields: ['city'] },
     { fields: ['propertyType'] },
-    { fields: ['approvalStatus'] }
+    { fields: ['approvalStatus'] },
+    { fields: ['isFeatured'] },
+    { fields: ['isAutoFeatured'] },
+    { fields: ['featuredScore'] }
   ]
 });
+
+// ============================================
+// INSTANCE METHODS
+// ============================================
+
+// Calculate featured score
+Property.prototype.calculateFeaturedScore = function() {
+  const daysOld = Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60 * 24));
+  const imageCount = Array.isArray(this.images) ? this.images.length : 0;
+  const amenityCount = Array.isArray(this.amenities) ? this.amenities.length : 0;
+  const hasVideo = !!this.videoUrl;
+  const descLength = this.description ? this.description.length : 0;
+  
+  let score = 0;
+  
+  // View score (1 point per view)
+  score += this.views * 1;
+  
+  // Wishlist score (5 points per wishlist)
+  score += this.wishlistCount * 5;
+  
+  // Contact score (3 points per contact)
+  score += this.contacts * 3;
+  
+  // Media quality
+  score += hasVideo ? 15 : 0;
+  score += imageCount >= 5 ? 10 : imageCount * 2;
+  
+  // Content quality
+  score += amenityCount * 2;
+  score += descLength >= 200 ? 10 : descLength >= 100 ? 5 : 0;
+  
+  // Recency bonus
+  if (daysOld < 7) score += 25;
+  else if (daysOld < 14) score += 15;
+  else if (daysOld < 30) score += 10;
+  
+  // Premium bonus
+  if (this.isPremium) score += 50;
+  
+  return score;
+};
+
+// Check if property qualifies for auto-featuring
+Property.prototype.qualifiesForAutoFeatured = function() {
+  const daysOld = Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60 * 24));
+  const imageCount = Array.isArray(this.images) ? this.images.length : 0;
+  const amenityCount = Array.isArray(this.amenities) ? this.amenities.length : 0;
+  const descLength = this.description ? this.description.length : 0;
+  
+  // Must be approved and active
+  if (this.approvalStatus !== 'approved' || !this.isActive || this.isSold) {
+    return false;
+  }
+  
+  // Premium properties always qualify
+  if (this.isPremium) return true;
+  
+  // Check all criteria
+  const meetsAgeCriteria = daysOld <= 30;
+  const meetsImageCriteria = imageCount >= 5;
+  const meetsEngagementCriteria = this.views >= 50 || this.wishlistCount >= 5;
+  const meetsContentCriteria = descLength >= 100 && amenityCount >= 3;
+  
+  return meetsAgeCriteria && meetsImageCriteria && meetsEngagementCriteria && meetsContentCriteria;
+};
+
+// Update featured status
+Property.prototype.updateFeaturedStatus = async function() {
+  const qualifies = this.qualifiesForAutoFeatured();
+  const score = this.calculateFeaturedScore();
+  
+  this.isAutoFeatured = qualifies;
+  this.featuredScore = score;
+  
+  await this.save();
+  return { qualifies, score };
+};
 
 export default Property;

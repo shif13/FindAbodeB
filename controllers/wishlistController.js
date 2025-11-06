@@ -1,4 +1,4 @@
-// backend/controllers/wishlistController.js
+// backend/controllers/wishlistController.js - UPDATED
 import Wishlist from '../models/wishlist.js';
 import Property from '../models/property.js';
 import { sendWishlistNotification } from '../utils/emailService.js';
@@ -39,14 +39,7 @@ export const addToWishlist = async (req, res) => {
     const { propertyId } = req.body;
 
     // Check if property exists
-
-const property = await Property.findByPk(propertyId);
-const owner = await User.findOne({ where: { firebaseUid: property.userId } });
-const seeker = await User.findOne({ where: { firebaseUid: userId } });
-
-await sendWishlistNotification(property, owner, seeker);
-
-
+    const property = await Property.findByPk(propertyId);
     if (!property) {
       return res.status(404).json({
         success: false,
@@ -66,10 +59,28 @@ await sendWishlistNotification(property, owner, seeker);
       });
     }
 
+    // Create wishlist item
     const wishlistItem = await Wishlist.create({
       userId,
       propertyId
     });
+
+    // ============================================
+    // 🔥 UPDATE: Increment wishlist count
+    // ============================================
+    await property.increment('wishlistCount');
+    
+    // Update featured status after wishlist change
+    await property.reload();
+    await property.updateFeaturedStatus();
+
+    // Send notification to owner
+    const owner = await User.findOne({ where: { firebaseUid: property.userId } });
+    const seeker = await User.findOne({ where: { firebaseUid: userId } });
+    
+    if (owner && seeker) {
+      await sendWishlistNotification(property, owner, seeker);
+    }
 
     res.status(201).json({
       success: true,
@@ -104,6 +115,16 @@ export const removeFromWishlist = async (req, res) => {
     }
 
     await wishlistItem.destroy();
+
+    // ============================================
+    // 🔥 UPDATE: Decrement wishlist count
+    // ============================================
+    const property = await Property.findByPk(propertyId);
+    if (property && property.wishlistCount > 0) {
+      await property.decrement('wishlistCount');
+      await property.reload();
+      await property.updateFeaturedStatus();
+    }
 
     res.status(200).json({
       success: true,

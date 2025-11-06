@@ -1,14 +1,12 @@
-// backend/controllers/propertyController.js - COMPLETE VERSION
+// backend/controllers/propertyController.js - UPDATED WITH FEATURED SYSTEM
 import Property from '../models/property.js';
 import { sendPropertyVisitNotification } from '../utils/emailService.js'; 
 import User from '../models/user.js';
 import { Op } from 'sequelize';
 
-
 const cleanPropertyData = (data) => {
   const cleaned = { ...data };
   
-  // Fields that should be null if empty
   const optionalFields = [
     'latitude', 'longitude', 'videoUrl', 'ownerName', 
     'ownerPhone', 'ownerEmail', 'leaseDuration', 
@@ -24,7 +22,6 @@ const cleanPropertyData = (data) => {
   
   return cleaned;
 };
-
 
 // Get all properties with filters (PUBLIC)
 export const getAllProperties = async (req, res) => {
@@ -43,14 +40,13 @@ export const getAllProperties = async (req, res) => {
 
     const filters = { 
       isActive: true,
-      approvalStatus: 'approved' // Only show approved properties
+      approvalStatus: 'approved'
     };
 
     if (city) filters.city = { [Op.like]: `%${city}%` };
     if (propertyType) filters.propertyType = propertyType;
     if (listingType) filters.listingType = listingType;
 
-    // Price filter - check both sale price and rent
     if (minPrice || maxPrice) {
       if (listingType === 'rent') {
         filters.rentPerMonth = {};
@@ -117,13 +113,18 @@ export const getPropertyById = async (req, res) => {
 
     // Increment view count
     await property.increment('views');
+    
+    // Update featured status after view count change
+    await property.reload();
+    await property.updateFeaturedStatus();
 
+    // Send notification every 10 views
     if (property.views % 10 === 0) {
-  const owner = await User.findOne({ where: { firebaseUid: property.userId } });
-  if (owner) {
-    await sendPropertyVisitNotification(property, owner);
-  }
-}
+      const owner = await User.findOne({ where: { firebaseUid: property.userId } });
+      if (owner) {
+        await sendPropertyVisitNotification(property, owner);
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -163,14 +164,11 @@ export const getUserProperties = async (req, res) => {
   }
 };
 
-// ============================================
-// CREATE PROPERTY - UPDATED FOR 2 USER TYPES
-// ============================================
+// Create property (PROTECTED)
 export const createProperty = async (req, res) => {
   try {
     const userId = req.user.uid;
 
-    // Get user from database
     const user = await User.findOne({ where: { firebaseUid: userId } });
 
     if (!user) {
@@ -180,7 +178,6 @@ export const createProperty = async (req, res) => {
       });
     }
 
-    // CHECK IF USER IS A PROVIDER
     if (user.userType !== 'provider') {
       return res.status(403).json({
         success: false,
@@ -190,7 +187,6 @@ export const createProperty = async (req, res) => {
       });
     }
 
-    // CHECK PROVIDER APPROVAL STATUS
     if (user.providerType === 'owner') {
       // Owner can post immediately
     }
@@ -205,21 +201,20 @@ export const createProperty = async (req, res) => {
       }
     }
 
-    // DETERMINE PROPERTY APPROVAL STATUS
-    let propertyApprovalStatus = 'approved'; // Default for owners
-
-    // 🔥 CLEAN THE DATA BEFORE SAVING
+    let propertyApprovalStatus = 'approved';
     const cleanedData = cleanPropertyData(req.body);
 
-    // CREATE PROPERTY
     const propertyData = {
       ...cleanedData,
       userId,
       approvalStatus: propertyApprovalStatus,
-      postedByType: user.providerType // 'owner', 'agent', or 'builder'
+      postedByType: user.providerType
     };
 
     const property = await Property.create(propertyData);
+    
+    // Calculate initial featured status
+    await property.updateFeaturedStatus();
 
     res.status(201).json({
       success: true,
@@ -239,7 +234,6 @@ export const createProperty = async (req, res) => {
   }
 };
 
-
 // Update property (PROTECTED)
 export const updateProperty = async (req, res) => {
   try {
@@ -255,7 +249,6 @@ export const updateProperty = async (req, res) => {
       });
     }
 
-    // Check if user owns the property
     if (property.userId !== userId) {
       return res.status(403).json({
         success: false,
@@ -264,6 +257,9 @@ export const updateProperty = async (req, res) => {
     }
 
     await property.update(req.body);
+    
+    // Recalculate featured status after update
+    await property.updateFeaturedStatus();
 
     res.status(200).json({
       success: true,
@@ -295,7 +291,6 @@ export const deleteProperty = async (req, res) => {
       });
     }
 
-    // Check if user owns the property
     if (property.userId !== userId) {
       return res.status(403).json({
         success: false,
@@ -319,22 +314,49 @@ export const deleteProperty = async (req, res) => {
   }
 };
 
+// ============================================
+// 🔥 NEW: HYBRID FEATURED SYSTEM
+// ============================================
+
 // Get featured properties (PUBLIC)
 export const getFeaturedProperties = async (req, res) => {
   try {
-    const properties = await Property.findAll({
+    // Get manually featured properties (highest priority)
+    const manualFeatured = await Property.findAll({
       where: { 
         isFeatured: true,
         isActive: true,
-        approvalStatus: 'approved'
+        approvalStatus: 'approved',
+        isSold: false
       },
-      limit: 6,
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      limit: 10 // Max 10 manual featured
     });
+
+    // Get auto-featured properties
+    const autoFeatured = await Property.findAll({
+      where: { 
+        isAutoFeatured: true,
+        isFeatured: false, // Don't duplicate manual featured
+        isActive: true,
+        approvalStatus: 'approved',
+        isSold: false
+      },
+      order: [['featuredScore', 'DESC'], ['createdAt', 'DESC']],
+      limit: 8 - manualFeatured.length // Fill up to 8 total
+    });
+
+    // Combine and limit to 8 total
+    const featured = [...manualFeatured, ...autoFeatured].slice(0, 8);
 
     res.status(200).json({
       success: true,
-      data: properties
+      data: featured,
+      counts: {
+        manual: manualFeatured.length,
+        auto: autoFeatured.length,
+        total: featured.length
+      }
     });
   } catch (error) {
     console.error('Get featured properties error:', error);
@@ -401,6 +423,9 @@ export const approveProperty = async (req, res) => {
     property.approvalStatus = 'approved';
     property.isActive = true;
     await property.save();
+    
+    // Calculate featured status
+    await property.updateFeaturedStatus();
 
     res.status(200).json({
       success: true,
@@ -432,6 +457,8 @@ export const rejectProperty = async (req, res) => {
 
     property.approvalStatus = 'rejected';
     property.isActive = false;
+    property.isFeatured = false;
+    property.isAutoFeatured = false;
     await property.save();
 
     res.status(200).json({
@@ -448,8 +475,7 @@ export const rejectProperty = async (req, res) => {
   }
 };
 
-
-// Add this function
+// Toggle manual featured status (ADMIN)
 export const toggleFeaturedProperty = async (req, res) => {
   try {
     const { id } = req.params;
@@ -462,7 +488,32 @@ export const toggleFeaturedProperty = async (req, res) => {
       });
     }
 
+    // Check limit: Max 10 manually featured
+    if (!property.isFeatured) {
+      const currentFeaturedCount = await Property.count({
+        where: { isFeatured: true }
+      });
+
+      if (currentFeaturedCount >= 10) {
+        return res.status(400).json({
+          success: false,
+          message: 'Maximum limit reached. Only 10 properties can be manually featured at a time.',
+          currentCount: currentFeaturedCount
+        });
+      }
+    }
+
     property.isFeatured = !property.isFeatured;
+    
+    // If manually featured, set expiry to 30 days (optional)
+    if (property.isFeatured) {
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+      property.featuredUntil = thirtyDaysFromNow;
+    } else {
+      property.featuredUntil = null;
+    }
+    
     await property.save();
 
     res.status(200).json({
@@ -474,6 +525,67 @@ export const toggleFeaturedProperty = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to toggle featured status',
+      error: error.message
+    });
+  }
+};
+
+// ============================================
+// 🔥 NEW: Recalculate all featured statuses (CRON JOB)
+// ============================================
+export const recalculateAllFeaturedStatuses = async (req, res) => {
+  try {
+    // Get all active, approved properties
+    const properties = await Property.findAll({
+      where: {
+        isActive: true,
+        approvalStatus: 'approved',
+        isSold: false
+      }
+    });
+
+    let updated = 0;
+    let qualified = 0;
+
+    for (const property of properties) {
+      // Skip manually featured properties
+      if (property.isFeatured) continue;
+      
+      const result = await property.updateFeaturedStatus();
+      updated++;
+      if (result.qualifies) qualified++;
+    }
+
+    // Also check if any manual featured properties have expired
+    const expiredFeatured = await Property.findAll({
+      where: {
+        isFeatured: true,
+        featuredUntil: {
+          [Op.lt]: new Date()
+        }
+      }
+    });
+
+    for (const property of expiredFeatured) {
+      property.isFeatured = false;
+      property.featuredUntil = null;
+      await property.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Featured statuses recalculated',
+      stats: {
+        totalChecked: updated,
+        newAutoFeatured: qualified,
+        expiredManualFeatured: expiredFeatured.length
+      }
+    });
+  } catch (error) {
+    console.error('Recalculate featured error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to recalculate featured statuses',
       error: error.message
     });
   }

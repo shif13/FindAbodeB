@@ -1,4 +1,4 @@
-// backend/server.js
+// backend/server.js - UPDATED WITH CRON JOBS
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -10,6 +10,11 @@ import sequelize from './config/db.js';
 import propertyRoutes from './routes/propertyRoutes.js';
 import wishlistRoutes from './routes/wishlistRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+
+// ====================================
+// 🔥 NEW: IMPORT CRON JOBS
+// ====================================
+import { startFeaturedPropertiesCron, runFeaturedRecalculationNow } from './services/cronJobs.js';
 
 // Load environment variables
 dotenv.config();
@@ -87,6 +92,13 @@ const startServer = async () => {
     await sequelize.sync({ alter: true });
     console.log('✅ Database models synchronized');
 
+    // 🔥 NEW: Start cron jobs
+    startFeaturedPropertiesCron();
+    
+    // Optional: Run featured recalculation on server start (for immediate effect)
+    // Uncomment next line if you want to recalculate immediately on server start
+    // await runFeaturedRecalculationNow();
+
     // Start server
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
@@ -114,6 +126,9 @@ const startServer = async () => {
       console.log(`   - PATCH  /api/users/:id/reject (Reject user - Admin)`);
       console.log(`   - DELETE /api/users/:id (Delete user - Admin)`);
       console.log(`   - PATCH  /api/users/:id/toggle-status (Toggle status - Admin)`);
+      console.log(`\n   ADMIN FEATURED:`);
+      console.log(`   - PATCH  /api/properties/admin/:id/toggle-featured (Toggle featured - Admin)`);
+      console.log(`   - POST   /api/properties/admin/recalculate-featured (Manual recalc - Admin)`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

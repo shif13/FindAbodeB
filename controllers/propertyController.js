@@ -11,14 +11,22 @@ const cleanPropertyData = (data) => {
     'latitude', 'longitude', 'videoUrl', 'ownerName', 
     'ownerPhone', 'ownerEmail', 'leaseDuration', 
     'pricePerSqft', 'depositAmount', 'maintenanceCharges',
-    'availableFrom', 'floor', 'totalFloors', 'facing', 'ageOfProperty'
+    'availableFrom', 'floor', 'totalFloors', 'facing', 'ageOfProperty',
+    // ✅ ADD THESE
+    'isFurnished'
   ];
   
   optionalFields.forEach(field => {
-    if (cleaned[field] === '' || cleaned[field] === undefined) {
+    if (cleaned[field] === '' || cleaned[field] === undefined || cleaned[field] === null) {
       cleaned[field] = null;
     }
   });
+  
+  if (cleaned.bedrooms !== undefined) cleaned.bedrooms = parseInt(cleaned.bedrooms) || 0;
+  if (cleaned.bathrooms !== undefined) cleaned.bathrooms = parseInt(cleaned.bathrooms) || 0;
+  if (cleaned.area !== undefined) cleaned.area = parseFloat(cleaned.area) || 0;
+  if (cleaned.price !== undefined && cleaned.price !== null) cleaned.price = parseFloat(cleaned.price) || null;
+  if (cleaned.rentPerMonth !== undefined && cleaned.rentPerMonth !== null) cleaned.rentPerMonth = parseFloat(cleaned.rentPerMonth) || null;
   
   return cleaned;
 };

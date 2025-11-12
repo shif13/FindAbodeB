@@ -37,7 +37,7 @@ const createAdmin = async () => {
     // For now, let's create with sample data that you can modify
     
     const adminData = {
-      firebaseUid: 'c8Gt5zV7LgXeLUhNREQX7jrkrJs2', 
+      firebaseUid: '256LYaZZbvQEbwkfC6LiNrDUPYF3', 
       email: 'fatimaa130201@gmail.com',       
       name: 'Admin User',
       phone: '+91 7867023051',

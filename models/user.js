@@ -1,4 +1,4 @@
-// backend/models/User.js - UPDATED TO 2 USER TYPES
+// backend/models/User.js - FIXED INDEX ISSUE
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/db.js';
 
@@ -11,7 +11,7 @@ const User = sequelize.define('User', {
   firebaseUid: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
+    unique: true, // This creates the unique constraint
     comment: 'Firebase Authentication UID'
   },
   email: {
@@ -28,9 +28,7 @@ const User = sequelize.define('User', {
     allowNull: true
   },
   
-  // ============================================
-  // SIMPLIFIED USER TYPE SYSTEM (2 TYPES)
-  // ============================================
+  // User Type System
   userType: {
     type: DataTypes.ENUM('seeker', 'provider', 'admin'),
     allowNull: false,
@@ -38,20 +36,13 @@ const User = sequelize.define('User', {
     comment: 'Main user type: seeker (looking) or provider (listing)'
   },
   
-  // Provider Subtype (only if userType = 'provider')
   providerType: {
     type: DataTypes.ENUM('owner', 'agent', 'builder'),
     allowNull: true,
     comment: 'Subtype for providers: owner, agent, or builder'
   },
   
-  // ============================================
-  // APPROVAL SYSTEM
-  // ============================================
-  // Logic:
-  // - seeker: always 'approved'
-  // - provider (owner): always 'approved'
-  // - provider (agent/builder): starts 'pending'
+  // Approval System
   approvalStatus: {
     type: DataTypes.ENUM('pending', 'approved', 'rejected'),
     defaultValue: 'approved',
@@ -59,9 +50,7 @@ const User = sequelize.define('User', {
     comment: 'Approval status for agents and builders'
   },
   
-  // ============================================
-  // COMMON FIELDS
-  // ============================================
+  // Common Fields
   city: {
     type: DataTypes.STRING,
     allowNull: true
@@ -79,9 +68,7 @@ const User = sequelize.define('User', {
     allowNull: true
   },
   
-  // ============================================
-  // AGENT-SPECIFIC FIELDS
-  // ============================================
+  // Agent-specific Fields
   agencyName: {
     type: DataTypes.STRING,
     allowNull: true,
@@ -98,9 +85,7 @@ const User = sequelize.define('User', {
     comment: 'For agents/builders: RERA registration'
   },
   
-  // ============================================
-  // BUILDER-SPECIFIC FIELDS
-  // ============================================
+  // Builder-specific Fields
   companyName: {
     type: DataTypes.STRING,
     allowNull: true,
@@ -112,9 +97,7 @@ const User = sequelize.define('User', {
     comment: 'For builders: GST number'
   },
   
-  // ============================================
-  // STATUS FIELDS
-  // ============================================
+  // Status Fields
   isVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
@@ -126,9 +109,7 @@ const User = sequelize.define('User', {
     comment: 'Account active/deactivated'
   },
   
-  // ============================================
-  // ADMIN FIELDS
-  // ============================================
+  // Admin Fields
   rejectionReason: {
     type: DataTypes.TEXT,
     allowNull: true,
@@ -137,41 +118,48 @@ const User = sequelize.define('User', {
 }, {
   tableName: 'users',
   timestamps: true,
+  // ✅ FIXED: Explicitly define indexes to prevent duplicates
   indexes: [
-    { fields: ['firebaseUid'] },
-    { fields: ['email'] },
-    { fields: ['userType'] },
-    { fields: ['providerType'] },
-    { fields: ['approvalStatus'] }
+    {
+      name: 'idx_firebaseUid',
+      unique: true,
+      fields: ['firebaseUid']
+    },
+    {
+      name: 'idx_email',
+      unique: true,
+      fields: ['email']
+    },
+    {
+      name: 'idx_userType',
+      fields: ['userType']
+    },
+    {
+      name: 'idx_providerType',
+      fields: ['providerType']
+    },
+    {
+      name: 'idx_approvalStatus',
+      fields: ['approvalStatus']
+    }
   ]
 });
 
-// ============================================
-// HELPER METHODS
-// ============================================
-
-// Check if user can post properties
+// Helper Methods
 User.prototype.canPostProperty = function() {
   if (this.userType !== 'provider') return false;
-  
-  // Owners can post immediately
   if (this.providerType === 'owner') return true;
-  
-  // Agents/Builders need approval
   if (this.providerType === 'agent' || this.providerType === 'builder') {
     return this.approvalStatus === 'approved';
   }
-  
   return false;
 };
 
-// Check if user needs approval
 User.prototype.needsApproval = function() {
   return this.userType === 'provider' && 
          (this.providerType === 'agent' || this.providerType === 'builder');
 };
 
-// Get user display type
 User.prototype.getDisplayType = function() {
   if (this.userType === 'admin') return 'Admin';
   if (this.userType === 'seeker') return 'Seeker';

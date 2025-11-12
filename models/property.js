@@ -324,4 +324,43 @@ Property.prototype.updateFeaturedStatus = async function() {
   return { qualifies, score };
 };
 
+// ============================================
+// HOOKS - Auto-update featured status
+// ============================================
+Property.afterUpdate(async (property, options) => {
+  // Only recalculate if engagement metrics changed
+  if (property.changed('views') || 
+      property.changed('wishlistCount') || 
+      property.changed('contacts')) {
+    
+    // Avoid recursion - don't trigger another update
+    if (!options.recalculatingFeatured) {
+      const score = property.calculateFeaturedScore();
+      const qualifies = property.qualifiesForAutoFeatured();
+      
+      await property.update(
+        {
+          isAutoFeatured: qualifies,
+          featuredScore: score
+        },
+        { recalculatingFeatured: true } // Flag to prevent recursion
+      );
+    }
+  }
+});
+
+Property.afterCreate(async (property, options) => {
+  // Calculate initial featured status after creation
+  const score = property.calculateFeaturedScore();
+  const qualifies = property.qualifiesForAutoFeatured();
+  
+  await property.update(
+    {
+      isAutoFeatured: qualifies,
+      featuredScore: score
+    },
+    { recalculatingFeatured: true }
+  );
+});
+
 export default Property;

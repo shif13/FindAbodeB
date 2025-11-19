@@ -33,12 +33,10 @@ const createAdmin = async () => {
     console.log('3. Copy the UID from Firebase');
     console.log('4. Run this script and enter the details below\n');
 
-    // For manual entry, you would prompt for input
-    // For now, let's create with sample data that you can modify
-    
+      
     const adminData = {
-      firebaseUid: '256LYaZZbvQEbwkfC6LiNrDUPYF3', 
-      email: 'fatimaa130201@gmail.com',       
+      firebaseUid: '2B3MSTYBPLOJAdIrverTmnx2Fwt1', 
+      email: 'kingsyshibani13@gmail.com',       
       name: 'Admin User',
       phone: '+91 7867023051',
       userType: 'admin',

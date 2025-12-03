@@ -2,10 +2,6 @@
 import User from '../models/user.js';
 import admin from '../config/firebase.js';
 
-/**
- * Automatically creates default admin user if none exists
- * This runs on server startup
- */
 export const initializeDefaultAdmin = async () => {
   try {
     // Check if any admin user exists
